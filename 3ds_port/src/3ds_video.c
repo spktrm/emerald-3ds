@@ -377,6 +377,12 @@ static float sZoom = 1.0f, sOffX, sOffY;
  * HD ones drawn for 1.4. Read from the settings while no battle is on.
  */
 static bool sBattle1x;
+/*
+ * A pass composed 1:1 in the battle's own coordinates: the text box's
+ * (DrawBattleTextLayer) and an OBJ window's surface (ObjWindowCompose). At
+ * 1.4 they were the only battle passes at zoom 1; at 1X the scene is too.
+ */
+static bool sFlatPass;
 
 int CtrBattleLayout_Is1x(void) { return sBattle1x; }
 float CtrBattleLayout_Zoom(void) { return sBattle1x ? 1.0f : CTR_BATTLE_ZOOM; }
@@ -394,6 +400,9 @@ static int sSurfaceH = 256;
  * after it at 1:1, crisp. See RenderBattleScene.
  */
 #define SCENE_ZOOM 2.0f
+/* What the battle scene is composed at: SCENE_ZOOM, or 1 at BATTLE SCALE 1X,
+ * where the surface then holds every line the screen shows and is drawn 1:1. */
+#define BATTLE_SCENE_ZOOM (sBattle1x ? 1.0f : SCENE_ZOOM)
 #define SCENE_W 1024
 #define SCENE_H 256
 /*
@@ -519,6 +528,21 @@ static int OamUnwrapY(unsigned index, int y)
     while (y - anchor > 128) y -= 256;
     while (anchor - y > 128) y += 256;
     return y;
+}
+
+/*
+ * A battle sprite's OAM y (8 bits), `h` lines tall, where the battle has it.
+ * The GBA's own reading brings a sprite back from the top only when it
+ * crosses the end of the range, and at 1.4 nothing small stands above the
+ * picture. At 1X the opponent's side rises 40 lines: its info box's HP bar
+ * to line -14, an OAM y of 242 that the GBA's reading puts below the picture.
+ * There the sprite's own y decides, as on the field (OamUnwrapY).
+ */
+static int BattleOamY(unsigned index, int y, int h)
+{
+    if (sBattle1x && (sOamAnchored[index >> 5] & (1u << (index & 31))))
+        return OamUnwrapY(index, y);
+    return y + h > 256 ? y - 256 : y;
 }
 
 #if CTR_VOXEL_ENABLED
@@ -1681,7 +1705,8 @@ static int sSpanShiftX, sSpanShiftY;
 static void ViewBase(void)
 {
     C2D_ViewReset();
-    if (sZoom != 1.0f)
+    /* Zoom 1 is not always the identity: the battle at 1X has an offset. */
+    if (sZoom != 1.0f || sOffX != 0.0f || sOffY != 0.0f)
     {
         C2D_ViewTranslate(sOffX, sOffY);
         C2D_ViewScale(sZoom, sZoom);
@@ -3341,6 +3366,7 @@ static void DrawBattleTextLayer(unsigned bg)
 
     sZoom = 1.0f;
     sOffX = sOffY = 0.0f;
+    sFlatPass = true;
     sLayerShift = shift * sShiftZoom;
     sViewX = CTR_BATTLE_X;
     sViewY = CTR_BATTLE_Y;
@@ -3353,6 +3379,7 @@ static void DrawBattleTextLayer(unsigned bg)
     else
         DrawBattleCut(bg, VIEW_RIGHT - 240, VIEW_RIGHT, 0, 160, VIEW_RIGHT - 240);
     C2D_Flush();
+    sFlatPass = false;
     sZoom = zoom;
     sOffX = offX;
     sOffY = offY;
@@ -5495,7 +5522,8 @@ static void DrawObjects(unsigned priority, bool effects)
              * turn into a column of blank tiles at (-48, -16), in its margin.
              */
             if (x + (int)boxW > 512) x -= 512;
-            if (y + (int)boxH > 256) y -= 256;
+            if (sBattle) y = BattleOamY((unsigned)i, y, (int)boxH);
+            else if (y + (int)boxH > 256) y -= 256;
         }
         else
         {
@@ -5863,7 +5891,7 @@ static bool BattleCurtain(void)
 {
     unsigned across = Reg(0x40);
 
-    return sBattle && sZoom == 1.0f && (Reg(0) & 0x2000) && !(Reg(0x4a) & 63)
+    return sBattle && sFlatPass && (Reg(0) & 0x2000) && !(Reg(0x4a) & 63)
         && (across >> 8) == 0 && (across & 255) >= 240;
 }
 
@@ -6194,7 +6222,8 @@ static bool ObjWindowBounds(int *x0, int *y0, int *x1, int *y1)
         x = (int)(attr1 & 511);
         y = (int)(attr0 & 255);
         if (x + w > 512) x -= 512;
-        if (y + h > 256) y -= 256;
+        if (sBattle) y = BattleOamY(i, y, h);
+        else if (y + h > 256) y -= 256;
         if (!any || x < *x0) *x0 = x;
         if (!any || y < *y0) *y0 = y;
         if (!any || x + w > *x1) *x1 = x + w;
@@ -6248,6 +6277,7 @@ static void ObjWindowCompose(void)
     /* GBA (x0, y0) at the surface's corner, at 1:1, flat. */
     sZoom = 1.0f;
     sOffX = sOffY = 0.0f;
+    sFlatPass = true;
     sViewX = -x0;
     sViewY = -y0;
     sTargetW = x1 - x0;
@@ -6280,6 +6310,7 @@ static void ObjWindowCompose(void)
     /* Rendering to a texture and then sampling it needs a command split. */
     C3D_FrameSplit(0);
 
+    sFlatPass = false;
     sZoom = zoom;
     sOffX = offX;
     sOffY = offY;
@@ -6703,7 +6734,7 @@ static float BattleSpriteShift(int centre)
 
 /*
  * Composes the layers not in `exclude` (Layers mask bits) into `target`, a
- * SCENE_ZOOM surface whose top-left texel is GBA (left, top), width x height
+ * BATTLE_SCENE_ZOOM surface whose top-left texel is GBA (left, top), width x height
  * texels of it used.
  */
 static void SceneComposeInto(C3D_RenderTarget *target, int column, int left, int top, int width,
@@ -6711,9 +6742,9 @@ static void SceneComposeInto(C3D_RenderTarget *target, int column, int left, int
 {
     float zoom = sZoom, offX = sOffX, offY = sOffY;
 
-    sZoom = SCENE_ZOOM;
-    sOffX = column - left * SCENE_ZOOM;
-    sOffY = -top * SCENE_ZOOM;
+    sZoom = BATTLE_SCENE_ZOOM;
+    sOffX = column - left * BATTLE_SCENE_ZOOM;
+    sOffY = -top * BATTLE_SCENE_ZOOM;
     sTargetW = column + width;
     sTargetH = height;
     sSurfaceH = SCENE_H;
@@ -6964,13 +6995,13 @@ static void BattleSceneCompose(int margin, unsigned exclude)
      * top row (DrawBattleBg), so it is filled from the surface's own top tile
      * rows, repeated, rather than doubling the surface for a dozen lines.
      */
-    int left = VIEW_LEFT - margin, top = VIEW_TOP, lowest = BATTLE_SCENE_BOTTOM - (int)(SCENE_H / SCENE_ZOOM);
+    int left = VIEW_LEFT - margin, top = VIEW_TOP, lowest = BATTLE_SCENE_BOTTOM - (int)(SCENE_H / BATTLE_SCENE_ZOOM);
     float ox, oy;
 
     if (top < lowest) top = lowest;
     ox = left * zoom + offX;
     oy = top * zoom + offY;
-    float scale = zoom / SCENE_ZOOM;
+    float scale = zoom / BATTLE_SCENE_ZOOM;
     int width = (int)ceilf((CTR_GAME_WIDTH + margin * zoom - ox) / scale);
     int height = (int)ceilf((BATTLE_SCENE_BOTTOM * zoom + offY - oy) / scale);
 
@@ -7137,7 +7168,7 @@ static void ScenePlaceFrom(C3D_RenderTarget *target, float shift, C3D_Tex *tex, 
     if (sky && !sBattleWorld)
     {
         /* Two tile rows, the period of the stripes the terrain repeats. */
-        const float rows = 16 * SCENE_ZOOM;
+        const float rows = 16 * BATTLE_SCENE_ZOOM;
 
         for (float y = oy; y > top; )
         {
@@ -7910,7 +7941,7 @@ static bool BattleSprites(unsigned *furthest, bool *apart)
         x = (int)(attr1 & 511);
         y = (int)(attr0 & 255);
         if (x + w > 512) x -= 512;
-        if (y + h > 256) y -= 256;
+        y = BattleOamY(i, y, h);
         full = y;
         /* Under the text box and above the scene nothing of it shows. */
         if (x < left) { w -= left - x; x = left; }
@@ -8127,7 +8158,7 @@ static bool SlotsPack(void)
     for (unsigned k = 0; k < sSlotCount; ++k)
     {
         BattleSlot *slot = &sSlots[order[k]];
-        int tw = (slot->w + 2) * (int)SCENE_ZOOM, th = (slot->h + 2) * (int)SCENE_ZOOM;
+        int tw = (slot->w + 2) * (int)BATTLE_SCENE_ZOOM, th = (slot->h + 2) * (int)BATTLE_SCENE_ZOOM;
         unsigned region = 0;
         int x = 0, y = 0;
 
@@ -8196,13 +8227,13 @@ static void SlotsCompose(void)
 {
     float zoom = sZoom, offX = sOffX, offY = sOffY;
 
-    sZoom = SCENE_ZOOM;
+    sZoom = BATTLE_SCENE_ZOOM;
     sLayerExclude = 63 & ~(16u | 32u);
     for (unsigned k = 0; k < sSlotCount; ++k)
     {
         const BattleSlot *slot = &sSlots[k];
         const SlotRegion *region = &sRegions[slot->region];
-        int tw = (slot->w + 2) * (int)SCENE_ZOOM, th = (slot->h + 2) * (int)SCENE_ZOOM;
+        int tw = (slot->w + 2) * (int)BATTLE_SCENE_ZOOM, th = (slot->h + 2) * (int)BATTLE_SCENE_ZOOM;
 
         /* A region cleared before its first slot (SlotsPack orders them). */
         if (k == 0 || slot->region != sSlots[k - 1].region)
@@ -8217,8 +8248,8 @@ static void SlotsCompose(void)
         }
 
         /* GBA (x - 1, y - 1) on the slot's corner. */
-        sOffX = slot->sx - (slot->x - 1) * SCENE_ZOOM;
-        sOffY = slot->sy - (slot->y - 1) * SCENE_ZOOM;
+        sOffX = slot->sx - (slot->x - 1) * BATTLE_SCENE_ZOOM;
+        sOffY = slot->sy - (slot->y - 1) * BATTLE_SCENE_ZOOM;
         BlendForget();
         Blend(5, false, false);
         sClipX0 = slot->x;
@@ -8277,7 +8308,7 @@ static void SlotsPlaceBegin(C3D_RenderTarget *target)
 
 static void SlotsPlace(C3D_RenderTarget *target, bool front, bool patches)
 {
-    float scale = sZoom / SCENE_ZOOM;
+    float scale = sZoom / BATTLE_SCENE_ZOOM;
     /* The loose sprites, among the groups behind the backgrounds in front. */
     bool loose = !front && !patches && sLooseCount;
     unsigned next = 0;
@@ -8300,7 +8331,7 @@ static void SlotsPlace(C3D_RenderTarget *target, bool front, bool patches)
     for (unsigned k = 0; k < sSlotCount; ++k)
     {
         const BattleSlot *slot = &sSlots[sPlaceOrder[k]];
-        int tw = (slot->w + 2) * (int)SCENE_ZOOM, th = (slot->h + 2) * (int)SCENE_ZOOM;
+        int tw = (slot->w + 2) * (int)BATTLE_SCENE_ZOOM, th = (slot->h + 2) * (int)BATTLE_SCENE_ZOOM;
         C3D_Tex *tex = sRegions[slot->region].tex;
 
         if (slot->front != front || (slot->patch != 0) != patches) continue;
@@ -10374,7 +10405,8 @@ static bool BlendBox(unsigned slots, int *x0, int *y0, int *x1, int *y1)
         else
         {
             if (x + w > 512) x -= 512;
-            if (y + h > 256) y -= 256;
+            if (sBattle) y = BattleOamY(i, y, h);
+            else if (y + h > 256) y -= 256;
         }
         if (x < *x0) *x0 = x;
         if (y < *y0) *y0 = y;
@@ -10846,6 +10878,10 @@ void CtrVideo_Present(void)
 #define CTR_DUMP_STEP 30
 #endif
     if (sBattle && sStats.frames - battleStart >= CTR_DUMP_FROM && sStats.frames % CTR_DUMP_STEP == 0 && dumped++ < 40)
+#elif defined(CTR_DUMP_RANGE)
+    /* Any 40 frames: every CTR_DUMP_STEP from frame CTR_DUMP_FROM on. */
+    static unsigned dumped;
+    if (sStats.frames >= CTR_DUMP_FROM && (sStats.frames - CTR_DUMP_FROM) % CTR_DUMP_STEP == 0 && dumped++ < 40)
 #else
     if (sStats.frames >= 150 && (sStats.frames - 150) % 150 == 0 && sStats.frames <= 6000)
 #endif

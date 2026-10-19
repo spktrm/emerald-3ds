@@ -1,0 +1,32 @@
+The map's name sign put away as a battle starts on the field.
+
+The battle transition is drawn magnified (3ds_port/src/3ds_video.c,
+TRANSITION_ZOOM 1.5), its own BG0 with it, and the name sign is a window on
+BG0: as a battle began right after arriving somewhere, the sign jumped to
+1.5x frames before the field itself moved. The GBA leaves it standing
+through the transition; here it is put away as the battle starts.
+
+diff --git a/src/battle_setup.c b/src/battle_setup.c
+--- a/src/battle_setup.c
++++ b/src/battle_setup.c
+@@ -6,6 +6,7 @@
+ #include "battle_setup.h"
+ #include "battle_transition.h"
+ #include "main.h"
++#include "map_name_popup.h"
+ #include "task.h"
+ #include "safari_zone.h"
+ #include "script.h"
+@@ -384,6 +385,12 @@
+ 
+     gTasks[taskId].tTransition = transition;
+     PlayMapChosenOrBattleBGM(song);
++#ifdef PLATFORM_3DS
++    // The transition is shown magnified, BG0 with it (3ds_video.c,
++    // TRANSITION_ZOOM): the map's name sign would grow on it frames before
++    // the field moves. The GBA leaves it standing; here it goes now.
++    HideMapNamePopUpWindow();
++#endif
+ }
+ 
+ #undef tState
