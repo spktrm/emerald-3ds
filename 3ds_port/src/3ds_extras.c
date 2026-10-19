@@ -24,6 +24,7 @@ const char *const gCtrExtrasOffOn[2] = {CTR_TEXT("OFF", "NO", "NON", "NO"), CTR_
 
 static const char *const sDayNight[] = {CTR_TEXT("OFF", "NO", "NON", "NO"), "AUTO"};
 static const char *const sClockSpeeds[] = {"1X", "6X", "12X", "24X", "60X", "120X"};
+static const char *const sBattleScales[] = {"1.4X", "1X"};
 static const char *const sTimedEncounters[] = {CTR_TEXT("ORIGINAL", "ORIGINAL", "ORIGINAL", "ORIGINALE"),
                                                CTR_TEXT("TIMED", "POR HORARIO", "PAR HORAIRE", "PER ORARIO")};
 
@@ -245,6 +246,8 @@ const CtrExtra gCtrExtras[] =
     /* The lead Pokémon walking behind the player, on HGSS's sprites from the
      * data pack (src/follower_mon.c). */
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("FOLLOWER", "ACOMPAÑANTE", "COMPAGNON", "COMPAGNO"), "follower", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+    /* The battle unmagnified, every GBA pixel one screen pixel (3ds_video.c, sBattle1x). */
+    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("BATTLE SCALE", "ESCALA COMBATE", "ÉCHELLE COMBAT", "SCALA LOTTA"), "battle_scale", 2, 0, sBattleScales, NULL, NULL, NULL},
     {0},
 };
 

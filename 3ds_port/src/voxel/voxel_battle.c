@@ -63,8 +63,8 @@ static void ViewInit(BattleView *v)
     v->tanX = v->tanY * (float)CTR_GAME_WIDTH / (float)CTR_GAME_HEIGHT;
 }
 
-static float GbaToScreenX(float x) { return CTR_GAME_WIDTH / 2 + (x - 120.0f) * CTR_BATTLE_ZOOM; }
-static float GbaToScreenY(float y) { return CTR_GAME_HEIGHT - 48 + (y - 112.0f) * CTR_BATTLE_ZOOM; }
+static float GbaToScreenX(float x) { return CTR_GAME_WIDTH / 2 + (x - 120.0f) * CtrBattleLayout_Zoom(); }
+static float GbaToScreenY(float y) { return CTR_GAME_HEIGHT - 48 + (y - 112.0f) * CtrBattleLayout_Zoom(); }
 
 /* The ground under a screen point, from the target. */
 static void ScreenToGround(const BattleView *v, float sx, float sy, float *x, float *z)
@@ -229,10 +229,20 @@ static const StageCell *CellAt(float x, float z)
 #define FEET_PLAYER_Y (110.0f + CTR_BATTLE_PLAYER_DROP)
 #define FEET_ENEMY_X 176.0f
 #define FEET_ENEMY_Y (70.0f - CTR_BATTLE_ENEMY_RISE)
-static const float sSideRect[2][4] = {
-    {16.0f, 40.0f + CTR_BATTLE_PLAYER_DROP, 128.0f, 112.0f + CTR_BATTLE_PLAYER_DROP}, /* the player's, x0 y0 x1 y1 */
-    {128.0f, 8.0f - CTR_BATTLE_ENEMY_RISE, 224.0f, 76.0f - CTR_BATTLE_ENEMY_RISE},  /* the opponent's */
-};
+/* x0 y0 x1 y1; side 0 the player's, 1 the opponent's. */
+static void SideRect(int side, float rect[4])
+{
+    const float drop = CTR_BATTLE_PLAYER_DROP, rise = CTR_BATTLE_ENEMY_RISE;
+
+    if (side == 0)
+    {
+        rect[0] = 16.0f; rect[1] = 40.0f + drop; rect[2] = 128.0f; rect[3] = 112.0f + drop;
+    }
+    else
+    {
+        rect[0] = 128.0f; rect[1] = 8.0f - rise; rect[2] = 224.0f; rect[3] = 76.0f - rise;
+    }
+}
 
 typedef struct
 {
@@ -385,13 +395,15 @@ void VoxelBattle_BeginStage(void)
     for (int side = 0; side < 2; ++side)
     {
         float gx = side == 0 ? FEET_PLAYER_X : FEET_ENEMY_X, gy = side == 0 ? FEET_PLAYER_Y : FEET_ENEMY_Y;
+        float rect[4];
 
+        SideRect(side, rect);
         ScreenToGround(&search->view, GbaToScreenX(gx), GbaToScreenY(gy),
                        &search->feetX[side], &search->feetZ[side]);
-        search->rect[side][0] = GbaToScreenX(sSideRect[side][0]);
-        search->rect[side][1] = GbaToScreenY(sSideRect[side][1]);
-        search->rect[side][2] = GbaToScreenX(sSideRect[side][2]);
-        search->rect[side][3] = GbaToScreenY(sSideRect[side][3]);
+        search->rect[side][0] = GbaToScreenX(rect[0]);
+        search->rect[side][1] = GbaToScreenY(rect[1]);
+        search->rect[side][2] = GbaToScreenX(rect[2]);
+        search->rect[side][3] = GbaToScreenY(rect[3]);
     }
 
     VoxelWorld_GetPlayerWorldCoords(&px, &pz);

@@ -4,7 +4,7 @@
 /*
  * Where the 2D battle puts its two sides on the top screen (3DS only).
  *
- * The battle scene is shown magnified (CTR_BATTLE_ZOOM) above a text box
+ * The battle scene is shown magnified (CtrBattleLayout_Zoom) above a text box
  * drawn 1:1 along the bottom of the screen. That box floats over the scene
  * (3ds_video.c, DrawBattleText), so the scene carries on behind its edges and
  * the screen has room the GBA's 240x160 did not: the opponent's side - its
@@ -23,9 +23,27 @@
  *
  * In GBA pixels. Contests use the same animation code and keep the GBA's
  * places.
+ *
+ * BATTLE SCALE (OPTIONS > ENHANCEMENTS) 1X shows the scene unmagnified, every
+ * GBA pixel one screen pixel: the 240x160 picture leaves 80 lines above it,
+ * and the opponent's side rises further into them. The scale is read while
+ * no battle is on, so a battle keeps the places its sprites were put at.
  */
-#define CTR_BATTLE_ENEMY_RISE 8
-#define CTR_BATTLE_PLAYER_DROP 2
+#define CTR_BATTLE_ENEMY_RISE_1_4X 8
+#define CTR_BATTLE_PLAYER_DROP_1_4X 2
+#define CTR_BATTLE_ENEMY_RISE_1X 40
+#define CTR_BATTLE_PLAYER_DROP_1X 2
+#ifdef PLATFORM_3DS
+/* BATTLE SCALE 1X is on (3ds_video.c). */
+int CtrBattleLayout_Is1x(void);
+/* Screen pixels per GBA pixel of the battle scene: CTR_BATTLE_ZOOM, or 1. */
+float CtrBattleLayout_Zoom(void);
+#define CTR_BATTLE_ENEMY_RISE (CtrBattleLayout_Is1x() ? CTR_BATTLE_ENEMY_RISE_1X : CTR_BATTLE_ENEMY_RISE_1_4X)
+#define CTR_BATTLE_PLAYER_DROP (CtrBattleLayout_Is1x() ? CTR_BATTLE_PLAYER_DROP_1X : CTR_BATTLE_PLAYER_DROP_1_4X)
+#else
+#define CTR_BATTLE_ENEMY_RISE CTR_BATTLE_ENEMY_RISE_1_4X
+#define CTR_BATTLE_PLAYER_DROP CTR_BATTLE_PLAYER_DROP_1_4X
+#endif
 #define CTR_BATTLE_SIDE_SPLIT 80
 
 /* The screen line the battle text box's frame starts at. */

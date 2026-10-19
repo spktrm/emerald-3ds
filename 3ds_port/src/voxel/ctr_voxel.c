@@ -36,6 +36,7 @@
 #include "3ds_daynight.h"
 #include "3ds_gpumem.h"
 #include "3ds_video.h"
+#include "ctr_battle_layout.h"
 #include "3ds_map_events.h"
 
 #include "ctr_voxel.h"
@@ -5090,11 +5091,11 @@ static void BattleCamera(void)
     intro->bars = Smooth((float)sBattle.frames / VOXEL_BATTLE_BARS_IN) * (1.0f - Smooth((q - 0.35f) / 0.65f));
     intro->time = (float)sBattle.frames;
     /*
-     * BG3's scroll moves the scenery: a GBA pixel is CTR_BATTLE_ZOOM screen
+     * BG3's scroll moves the scenery: a GBA pixel is CtrBattleLayout_Zoom() screen
      * pixels, and a screen pixel at the target this many tiles - across, and
      * along the ground foreshortened by the pitch.
      */
-    k = CTR_BATTLE_ZOOM * 2.0f * distance * tanf(sCamera.fov * 0.5f * degrees)
+    k = CtrBattleLayout_Zoom() * 2.0f * distance * tanf(sCamera.fov * 0.5f * degrees)
       / (float)CTR_GAME_HEIGHT;
     x += sBattle.shakeX * k;
     z += sBattle.shakeY * k / sinf(pitch * degrees);

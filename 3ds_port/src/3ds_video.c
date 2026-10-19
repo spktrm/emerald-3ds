@@ -371,6 +371,15 @@ static int sViewX, sViewY;
  * CTR_BATTLE_ZOOM and its text box at 1 (DrawBattleTextLayer).
  */
 static float sZoom = 1.0f, sOffX, sOffY;
+/*
+ * BATTLE SCALE 1X (ctr_battle_layout.h): the battle at zoom 1, every GBA pixel
+ * one screen pixel, with the GBA's own info boxes and text box rather than the
+ * HD ones drawn for 1.4. Read from the settings while no battle is on.
+ */
+static bool sBattle1x;
+
+int CtrBattleLayout_Is1x(void) { return sBattle1x; }
+float CtrBattleLayout_Zoom(void) { return sBattle1x ? 1.0f : CTR_BATTLE_ZOOM; }
 /* Size of the surface being composed: the screen, or the battle scene's. */
 static int sTargetW = CTR_GAME_WIDTH, sTargetH = CTR_GAME_HEIGHT;
 /* Height of the texture behind it: scissor rows count from its far edge. */
@@ -405,7 +414,7 @@ static int sSceneColumn;
  * picture ends; below that, behind the box's margins, the scene's last line
  * is carried down (ScenePlaceFrom).
  */
-#define BATTLE_SCENE_BOX_BOTTOM (112 + (int)ceilf((CTR_BATTLE_BOX_TOP - (CTR_GAME_HEIGHT - 48)) / CTR_BATTLE_ZOOM))
+#define BATTLE_SCENE_BOX_BOTTOM (112 + (int)ceilf((CTR_BATTLE_BOX_TOP - (CTR_GAME_HEIGHT - 48)) / CtrBattleLayout_Zoom()))
 /* Or the whole picture, with no text box to go behind (BattleSceneBottom). */
 static int BattleSceneBottom(void);
 #define BATTLE_SCENE_BOTTOM BattleSceneBottom()
@@ -2744,8 +2753,8 @@ static bool HudCrispPossible(void)
         if (k < 0 || !HudEntry(i, &p, &x, &y, &w, &h))
             continue;
         /* The picture's extent in GBA pixels. */
-        w = (int)ceilf(CTR_HUD_W / CTR_BATTLE_ZOOM);
-        h = (int)ceilf(CTR_HUD_H / CTR_BATTLE_ZOOM);
+        w = (int)ceilf(CTR_HUD_W / CtrBattleLayout_Zoom());
+        h = (int)ceilf(CTR_HUD_H / CtrBattleLayout_Zoom());
         if (!HudWindowsShow(x, y, w, h)) return false;
         for (unsigned j = 0; j < 128; ++j)
         {
@@ -2797,6 +2806,8 @@ static void HudFrame(void)
         return;
     }
     sHudLastBattleFrame = sStats.frames;
+    /* At 1X the GBA's own boxes are drawn, pixel for pixel. */
+    if (sBattle1x) return;
     sHud = CtrBattleHud_Boxes();
     if (!sHud) return;
     for (unsigned k = 0; k < CTR_HUD_BOXES; ++k)
@@ -2825,7 +2836,7 @@ static void HudDrawInScene(unsigned k, unsigned tile, int x, int y, int w, int h
     C2D_Flush();
     /* With each sprite at its depth (BattleSpriteShift), the half is moved too. */
     Scissor((int)floorf(x + sLayerShift), y, (int)ceilf(x + w + sLayerShift), y + h);
-    HudDrawPicture(k, left + CTR_VIEW_X + sLayerShift, y + CTR_VIEW_Y, 1.0f / CTR_BATTLE_ZOOM, true);
+    HudDrawPicture(k, left + CTR_VIEW_X + sLayerShift, y + CTR_VIEW_Y, 1.0f / CtrBattleLayout_Zoom(), true);
     C2D_Flush();
     RestoreScissor();
     BlendForget();
@@ -3039,6 +3050,13 @@ static void BoxFrame(void)
         return;
     }
     ++sBoxBattleFrames;
+    /* The GBA's own box at 1X: always in place, nothing slides. */
+    if (sBattle1x)
+    {
+        sBoxHidden = false;
+        sBoxSlide = -1;
+        return;
+    }
     if (sBoxSlide >= 0 && ++sBoxSlide > BOX_SLIDE_FRAMES) sBoxSlide = -1;
     /* Only a battle over the voxel world, decided as it begins: the world is
      * there from its first frames, the camera's flight a little later. */
@@ -3082,7 +3100,7 @@ static void BoxFrame(void)
         float offset = BoxOffset();
 
         CtrBattleHud_LiftPlayerTrainer((int)lroundf(offset > 0 ? offset * (BOX_TRAINER_HIDDEN / BOX_HIDDEN)
-                                                               : offset / CTR_BATTLE_ZOOM));
+                                                               : offset / CtrBattleLayout_Zoom()));
     }
 }
 
@@ -3255,7 +3273,7 @@ static void DrawBattleText(unsigned bg)
     int fill0 = 240 - BATTLE_BAND_CAP + VIEW_LEFT, fill1 = VIEW_RIGHT - BATTLE_BAND_CAP;
     int x0 = fill0, x1 = fill1, y0 = BATTLE_BAND_TOP, y1 = 160;
 
-    if (DrawBattleTextHd(bg)) return;
+    if (!sBattle1x && DrawBattleTextHd(bg)) return;
     /* Above the text box: windows, where the game put them. */
     uint32_t before = sStats.tiles;
     DrawBattleCut(bg, 0, 240, 0, BATTLE_BAND_TOP, 0);
@@ -10752,7 +10770,9 @@ void CtrVideo_Present(void)
     sBattle = sBattleRequested && !sStage && !sCentred;
     sInBattle = sBattleRequested;
     sTransition = sTransitionRequested && sLineRegs && !sStage && !sCentred && !sBattle;
-    sZoom = sBattle ? CTR_BATTLE_ZOOM : 1.0f;
+    if (!sInBattle)
+        sBattle1x = CtrSettings_GetInt("battle_scale", 0) == 1;
+    sZoom = sBattle ? CtrBattleLayout_Zoom() : 1.0f;
     /* GBA (120, 112) - the middle of the scene's bottom edge - on screen (200, 192). */
     sOffX = sBattle ? CTR_GAME_WIDTH / 2 - 120 * sZoom : 0.0f;
     sOffY = sBattle ? CTR_GAME_HEIGHT - 48 - 112 * sZoom : 0.0f;
