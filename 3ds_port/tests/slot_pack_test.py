@@ -38,6 +38,8 @@ def main():
 #include <stdlib.h>
 #include <string.h>
 #define SCENE_ZOOM ''' + zoom + r'''
+/* 3ds_video.c's BATTLE_SCENE_ZOOM at BATTLE SCALE 1.4X, the scale the slots are packed at. */
+#define BATTLE_SCENE_ZOOM SCENE_ZOOM
 typedef struct { unsigned short width, height; } C3D_Tex;
 typedef struct C3D_RenderTarget C3D_RenderTarget;
 ''' + block(video, 'typedef struct\n{\n    C3D_RenderTarget *target;', '} SlotRegion;') + r'''
