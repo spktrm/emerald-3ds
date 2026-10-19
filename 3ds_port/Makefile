@@ -83,6 +83,16 @@ endif
 ifdef FORCE_SLIDER
 CPPFLAGS += -DCTR_FORCE_SLIDER=$(FORCE_SLIDER)f
 endif
+# FRAME_DUMP=1 writes the top screen's eyes to sdmc:/3ds/emerald3ds/frames.raw
+# (3ds_video.c); with DUMP_BATTLE=1 every DUMP_STEP frames of a battle from its
+# DUMP_FROMth (at least 1: 0 makes the comparison always true, which -Werror
+# refuses). ../tools/frames_to_png.py turns the file into pictures.
+ifdef FRAME_DUMP
+CPPFLAGS += -DCTR_FRAME_DUMP=1
+ifdef DUMP_BATTLE
+CPPFLAGS += -DCTR_DUMP_BATTLE=1 -DCTR_DUMP_FROM=$(or $(DUMP_FROM),1) -DCTR_DUMP_STEP=$(or $(DUMP_STEP),30)
+endif
+endif
 # A small FPS counter in the top-left corner of the top screen, shown when
 # the bottom screen's options turn it on (off by default).
 SHOW_FPS ?= 1
