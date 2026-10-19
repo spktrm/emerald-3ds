@@ -110,7 +110,8 @@ void CtrCycle_Input(CtrInputSample *sample)
  * -DCTR_BATTLE_TEST_TRAINER=TRAINER_x for that trainer's battle - a double
  * one for a doubles trainer): a second and a half after the field is up,
  * every time it is; in battle A is pressed every 12 frames, so that its
- * turns play (FIGHT, the first move, the messages).
+ * turns play (FIGHT, the first move, the messages). -DCTR_BATTLE_TEST_MOVE=n
+ * keeps the move cursor on slot n (0-3) instead of the first move.
  */
 #ifndef CTR_BATTLE_TEST_LEVEL
 #define CTR_BATTLE_TEST_LEVEL 50
@@ -142,6 +143,10 @@ void CtrCycle_Frame(void)
 
 void CtrCycle_Input(CtrInputSample *sample)
 {
+#ifdef CTR_BATTLE_TEST_MOVE
+    if (gMain.inBattle)
+        gMoveSelectionCursor[0] = CTR_BATTLE_TEST_MOVE;
+#endif
     /* In battle, A every 12 frames: FIGHT, the first move, the messages.
      * Before the field is up, A every 40: the title and the main menu
      * (CONTINUE is the default). */

@@ -607,6 +607,8 @@ static uint32_t sFogOam[4];
 
 /* Weather carried over the whole view (CtrVideo_MarkWeatherOam). */
 static uint32_t sLatticeOam[4], sParticleOam[4];
+/* How far apart the copies of a battle's weather particles are, down (DrawObjects). */
+#define BATTLE_PARTICLE_ROWS 120
 
 void CtrVideo_ClearFogOam(void)
 {
@@ -5592,18 +5594,22 @@ static void DrawObjects(unsigned priority, bool effects)
         /*
          * Rain, snow, the sand swirls and the bubbles fall over the GBA's
          * 240x160 screen and wrap round its edges: copies of the screen side
-         * by side carry them over the whole view, without a seam.
+         * by side carry them over the whole view, without a seam. The
+         * battle's (sprite.c, IsBattleWeatherSprite) are copied every
+         * BATTLE_PARTICLE_ROWS lines down: its rain drops start in the top
+         * 80 lines and fall 52, so copies 160 apart left a dry band above
+         * the picture at 1X. The hail turns as it falls (affine).
          */
-        if (particle && !affine)
+        if (particle && (!affine || sBattle))
         {
-            int left = x, top = y;
+            int left = x, top = y, rows = sBattle ? BATTLE_PARTICLE_ROWS : 160;
 
             while (left + (int)boxW > sClipX0) left -= 240;
-            while (top + (int)boxH > sClipY0) top -= 160;
-            for (int cy = top; cy < sClipY1; cy += 160)
+            while (top + (int)boxH > sClipY0) top -= rows;
+            for (int cy = top; cy < sClipY1; cy += rows)
                 for (int cx = left; cx < sClipX1; cx += 240)
                     DrawObjectAt(cx, cy, attr1, attr2, ObjBank((unsigned)i, attr2), width, height, boxW, boxH,
-                                 false, color256, effects, mode);
+                                 affine, color256, effects, mode);
             continue;
         }
         DrawObjectAt(x, y, attr1, attr2, ObjBank((unsigned)i, attr2), width, height, boxW, boxH, affine, color256,
@@ -6741,6 +6747,7 @@ static void SceneComposeInto(C3D_RenderTarget *target, int column, int left, int
                              int height, unsigned exclude)
 {
     float zoom = sZoom, offX = sOffX, offY = sOffY;
+    bool scissored = sScissored;
 
     sZoom = BATTLE_SCENE_ZOOM;
     sOffX = column - left * BATTLE_SCENE_ZOOM;
@@ -6749,6 +6756,14 @@ static void SceneComposeInto(C3D_RenderTarget *target, int column, int left, int
     sTargetH = height;
     sSurfaceH = SCENE_H;
     ClipToView();
+    /*
+     * Only the scene's own columns, from `column`: before them the surface
+     * holds the voxel world's picture (RenderBattleWorld). The view reached
+     * back to the surface's first texel - at 1X GBA x -491 - and a background
+     * repeating every 512 pixels, a battler moved onto BG1 or BG2 for a move,
+     * drew a second copy of it into the world.
+     */
+    if (sClipX0 < left) sClipX0 = left;
     BlendForget();
     /* Cleared transparent: the backdrop is the logical surface's own clear,
      * which is RGBA8. A colour cleared into this 5551 surface comes out
@@ -6770,12 +6785,16 @@ static void SceneComposeInto(C3D_RenderTarget *target, int column, int left, int
         C2D_Flush();
         BlendForget();
     }
+    /* Sprites and every band's scissor kept to those columns too. */
+    sScissored = true;
+    RestoreScissor();
     Blend(5, false, false);
     sLayerExclude = exclude;
     memset(sBgDrawn, 0, sizeof(sBgDrawn));
     if (!(Reg(0) & 128)) Compose();
     sLayerExclude = 0;
     C2D_Flush();
+    sScissored = scissored;
     C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
     /* Seal the world list; FrameEnd owns queue submission and completion. */
     GpuSplit();
@@ -7785,6 +7804,8 @@ static unsigned sSlotCount;
 #define LOOSE_MAX 16
 static struct { uint8_t index, priority; int16_t x, y, w, h, centre; } sLoose[LOOSE_MAX];
 static unsigned sLooseCount;
+/* This frame's battle has weather particles on screen (BattleWeatherEye). */
+static bool sBattleWeather;
 /* The order the slots are drawn in (SlotsPack): back to front. */
 static uint8_t sPlaceOrder[128];
 /*
@@ -7921,6 +7942,7 @@ static bool BattleSprites(unsigned *furthest, bool *apart)
 
     sSlotCount = 0;
     sLooseCount = 0;
+    sBattleWeather = false;
     *furthest = 0;
     /* The OBJ window is on through every battle (DISPCNT 0xbf40); its own
      * sprites (mode 2) are not drawn by this renderer anyway (DrawObjects).
@@ -7936,6 +7958,14 @@ static bool BattleSprites(unsigned *furthest, bool *apart)
         BattleSlot *slot;
 
         if ((!affine && (attr0 & 0x200)) || shape == 3 || mode >= 2) continue;
+        /* The weather (CtrVideo_MarkWeatherOam): drawn over each eye whole,
+         * every copy across the view (BattleWeatherEye), not in a slot cut
+         * to the sprite's own box. */
+        if (sParticleOam[i >> 5] & (1u << (i & 31)))
+        {
+            sBattleWeather = true;
+            continue;
+        }
         w = dimensions[shape][attr1 >> 14][0] << twice;
         h = dimensions[shape][attr1 >> 14][1] << twice;
         x = (int)(attr1 & 511);
@@ -8059,6 +8089,39 @@ static void LooseDraw(C3D_RenderTarget *picture, unsigned l)
     sOffX = offX;
     C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
     ClipToView();
+    BlendForget();
+}
+
+/*
+ * The battle's weather particles over an eye's picture: every copy of them
+ * across the view (DrawObjects), in front of the slots, at the depth of the
+ * sprites standing where the two sides meet. Their sprites alone, not
+ * through Compose: its windows set scissors in a texture's rows (Scissor,
+ * sSurfaceH), and an eye drawn straight onto the screen, whose framebuffer
+ * lies on its side, lost the rain on the screen's left to them.
+ */
+static void BattleWeatherEye(C3D_RenderTarget *picture)
+{
+    float offX = sOffX;
+    bool maskOn = sObjMaskOn;
+    uint32_t mask[4];
+
+    memcpy(mask, sObjMask, sizeof(mask));
+    BlendForget();
+    SceneOn(picture);
+    C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
+    ClipToView();
+    sObjMaskOn = true;
+    memcpy(sObjMask, sParticleOam, sizeof(sObjMask));
+    sOffX = offX + BattleSpriteShift(CTR_BATTLE_SIDE_SPLIT);
+    ViewBase();
+    for (int priority = 3; priority >= 0; --priority)
+        DrawObjects((unsigned)priority, false);
+    C2D_Flush();
+    sObjMaskOn = maskOn;
+    memcpy(sObjMask, mask, sizeof(mask));
+    sOffX = offX;
+    ViewBase();
     BlendForget();
 }
 
@@ -8687,6 +8750,8 @@ static void RenderBattleStereo(uint32_t clear, float slider, C3D_Tex *world)
                         break;
                     }
         }
+        if (sBattleWeather && !(Reg(0) & 128))
+            BattleWeatherEye(picture);
         /* The info boxes over them at the screen's pixels: at their sprites'
          * depth, or the scenery's when the sprites are composed with it. */
         if (!(Reg(0) & 128))

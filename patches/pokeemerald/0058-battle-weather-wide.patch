@@ -1,0 +1,45 @@
+Battle weather carried over the wide view: rain, hail, the sand crescents.
+
+The field's rain, snow and sand are marked for the compositor
+(CtrVideo_MarkWeatherOam), which repeats them over the whole 400x240 view;
+the battle's weather sprites were not, and fell over a GBA-sized part of the
+screen only - plain to see at BATTLE SCALE 1X. Marked by the template's
+address, as the fog is: the rain drops (AnimTask_CreateRaindrops), the hail
+(AnimTask_Hail) and the crescents Sandstorm and Heat Wave blow across.
+
+diff --git a/src/sprite.c b/src/sprite.c
+--- a/src/sprite.c
++++ b/src/sprite.c
+@@ -526,6 +526,21 @@
+ }
+ 
+ #if defined(PLATFORM_3DS)
++// Battle weather (battle_anim_water.c, battle_anim_ice.c, battle_anim_rock.c):
++// the rain, the hail and the crescents of Sandstorm and Heat Wave fall or blow
++// over the GBA's whole screen, and are carried over the wide view as the
++// field's rain is (CtrVideo_MarkWeatherOam). By the template's address only,
++// as IsFogSprite below.
++extern const struct SpriteTemplate gRainDropSpriteTemplate;
++extern const struct SpriteTemplate gHailParticleSpriteTemplate;
++extern const struct SpriteTemplate gFlyingSandCrescentSpriteTemplate;
++
++static bool8 IsBattleWeatherSprite(const struct Sprite *sprite)
++{
++    return sprite->template == &gRainDropSpriteTemplate || sprite->template == &gHailParticleSpriteTemplate
++        || sprite->template == &gFlyingSandCrescentSpriteTemplate;
++}
++
+ /*
+  * The fog's sprites: one 64x64 picture laid on a 64-pixel lattice, scrolled.
+  * Twenty of them cover a GBA screen, with OAM's own wrap-around closing the
+@@ -642,6 +657,10 @@
+             case WEATHER_TILING_PARTICLES:
+                 CtrVideo_MarkWeatherOam(first, oamIndex, FALSE);
+                 break;
++            default:
++                if (gMain.inBattle && IsBattleWeatherSprite(sprite))
++                    CtrVideo_MarkWeatherOam(first, oamIndex, FALSE);
++                break;
+             }
+             // Drawn with an ext palette, which oam.paletteNum cannot name.
+             if (sSpriteExtPalettes[sSpriteOrder[i]])
